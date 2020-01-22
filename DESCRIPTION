@@ -1,0 +1,10 @@
+Package: commuter
+Type: Package
+Title: A Tool for Commute Option Exploration and Planning
+Version: 0.1.0
+Authors@R: person("Dylan", "Stark", email = "dylan.stark@gmail.com",
+  role = c("aut", "cre"))
+Description: A tool for exploring and planning routes for commuting to work.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
