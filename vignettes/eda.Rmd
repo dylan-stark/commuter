@@ -1,0 +1,267 @@
+---
+title: "Commute EDA"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 6,
+  fig.asp = 0.618,
+  out.width = "70%",
+  fig.align = "center"
+)
+```
+
+```{r include = FALSE}
+library(tidyverse)
+library(hms)
+library(commuter)
+
+data("chicago_to_harvard_monday_through_friday")
+data("harvard_to_chicago_monday_through_friday")
+```
+
+## Trains between Arlington Heights and Ogilvie stations
+
+```{r echo=FALSE}
+morning_trains <- harvard_to_chicago_monday_through_friday %>%
+  arrange(`Arlington Heights`) %>%
+  mutate(train_number = factor(train_number, ordered = TRUE)) %>%
+  gather(station, time, Ogilvie, `Arlington Heights`)
+
+morning_trains %>%
+  ggplot(aes(as.POSIXct(time), rev(train_number))) +
+  geom_line() +
+  geom_point() +
+  scale_x_datetime() +
+  labs(x = NULL, y = "Train #") +
+  ggtitle("Morning inbound trains from Arlington Heights to Ogilvie") +
+  theme_minimal() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank()
+  )
+```
+
+```{r echo=FALSE}
+evening_trains <- chicago_to_harvard_monday_through_friday %>%
+  arrange(Ogilvie) %>%
+  mutate(train_number = factor(train_number, ordered = TRUE)) %>%
+  gather(station, time, Ogilvie, `Arlington Heights`)
+
+evening_trains %>%
+  ggplot(aes(as.POSIXct(time), rev(train_number))) +
+  geom_line() +
+  geom_point() +
+  scale_x_datetime() +
+  labs(x = NULL, y = "Train #") +
+  ggtitle("Evening outbound trains from Ogilvie to Arlington Heights") +
+  theme_minimal() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank()
+  )
+```
+
+## Routes in and out
+
+```{r echo=FALSE}
+morning_options <- harvard_to_chicago_monday_through_friday %>%
+  rename(morning_train_number = train_number,
+         morning_depart = `Arlington Heights`,
+         morning_arrive = Ogilvie)
+
+evening_options <- chicago_to_harvard_monday_through_friday %>%
+  rename(evening_train_number = train_number,
+         evening_depart = Ogilvie,
+         evening_arrive = `Arlington Heights`)
+
+combined_options <- crossing(
+  morning_options,
+  evening_options
+) %>%
+  mutate(time_on_morning_train = as.hms(morning_arrive - morning_depart),
+         time_on_evening_train = as.hms(evening_arrive - evening_depart),
+         total_time_on_train =  as.hms(time_on_morning_train + time_on_evening_train))
+```
+
+```{r echo=FALSE}
+combined_options %>%
+  select(morning_train_number, morning_depart, morning_arrive, time_on_morning_train) %>%
+  mutate(time_on_morning_train = as.numeric(time_on_morning_train) / 60) %>%
+  distinct() %>%
+  arrange(time_on_morning_train) %>%
+  knitr::kable(col.names = c("Train number", "Depart", "Arrive", "Time on train (min)"))
+```
+
+- 12 trains in the morning
+- 35--53 minutes on train
+
+```{r echo=FALSE}
+combined_options %>%
+  select(evening_train_number, evening_depart, evening_arrive, time_on_evening_train) %>%
+  distinct() %>%
+  mutate(time_on_evening_train = as.numeric(time_on_evening_train) / 60) %>%
+  arrange(time_on_evening_train) %>%
+  knitr::kable(col.names = c("Train number", "Depart", "Arrive", "Time on train (min)"))
+```
+
+- 7 trains in the evening
+- 36--54 minutes on train
+
+```{r echo=FALSE}
+combined_options %>%
+  ggplot(aes(as.POSIXct(morning_depart), as.numeric(total_time_on_train) / 60 / 60)) +
+  geom_hline(yintercept = 1, color = "gray", linetype = 2) +
+  geom_hline(yintercept = 1.5, color = "gray", linetype = 2) +
+  geom_hline(yintercept = 2, color = "gray", linetype = 2) +
+  geom_jitter() +
+  labs(title = "For 84 options, total time on train varies from 1.2 to 1.8 hours",
+       subtitle = "The later you leave in the morning the better the options",
+       x = "Time out on the morning train",
+       y = "Total time on both trains (hours)") +
+  theme_minimal() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank()
+  )
+```
+
+## Time in office
+
+- Assuming 8-minute walk from station to office.
+
+```{r echo=FALSE}
+combined_options_in_office <- combined_options %>%
+  mutate(office_arrive = hms::as.hms(morning_arrive + hms::hms(0, 8, 0)),
+         office_depart = hms::as.hms(evening_depart - hms::hms(0, 8 + 20, 0)),
+         total_time_in_office = hms::as.hms(office_depart - office_arrive))
+
+combined_options_in_office %>%
+  ggplot(aes(as.POSIXct(morning_depart), as.numeric(total_time_in_office) / 60 / 60)) +
+  geom_hline(yintercept = 6, color = "gray", linetype = 2) +
+  geom_hline(yintercept = 7, color = "gray", linetype = 2) +
+  geom_hline(yintercept = 8, color = "gray", linetype = 2) +
+  geom_jitter() +
+  labs(title = "For 84 options, most are not viable",
+       subtitle = "There's little benefit to leaving super early",
+       x = "Time out on the morning train",
+       y = "Total time in office (hours)") +
+  theme_minimal() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank()
+  )
+```
+
+## Door-to-door
+
+Assuming to/from station
+
+1. 15 minute walk
+2. 10 minute drive
+3. 5 minute bike
+
+```{r echo=FALSE}
+combined_options_in_all <- combined_options_in_office %>%
+  crossing(
+    tribble(
+      ~house_to_station_mode, ~house_to_station_time,
+      "walk", hms(0, 15, 0),
+      "drive", hms(0, 10, 0),
+      "bike", hms(0, 5, 0)
+    )
+  ) %>%
+  mutate(
+    house_depart = as.hms(morning_depart - house_to_station_time),
+    house_arrive = as.hms(evening_arrive + house_to_station_time)
+  ) %>%
+  mutate(
+    route_id = as.character(row_number())
+  )
+```
+
+Assessing options:
+
+- Must be at house by 4:45 at the latest
+- Must work in office at least 7 hours in office
+- Must work in office no more than 8.25 hours
+
+```{r echo=FALSE}
+house_pickup_options <- combined_options_in_all %>%
+  filter(house_arrive <= hms(0, 45, 16),
+         total_time_in_office >= hms(0, 0, 7),
+         total_time_in_office <= hms(0, 15, 8)) %>%
+  mutate(total_time_in_office_level = ifelse(total_time_in_office < hms(0, 50, 6), "(-, 6:50)",
+                                             ifelse(total_time_in_office < hms(0, 50, 7), "[6:50, 7:50)", "[7:50, -)"))) %>%
+  arrange(house_depart, house_arrive, total_time_in_office) %>%
+  mutate(route_id = factor(row_number(), ordered = TRUE))
+
+house_pickup_station_to_house_time <- house_pickup_options %>%
+  select(route_id, house_arrive) %>%
+  mutate(house_arrive_label = stringr::str_trunc(as.character(as.hms(house_arrive - hms(0, 0, 12))), 5, side = "right", ellipsis = ""))
+
+house_pickup_station_to_house <- house_pickup_options %>%
+  select(route_id, house_to_station_mode, evening_arrive, house_arrive) %>%
+  gather(location, time, evening_arrive, house_arrive)
+
+house_pickup_office_to_train <- house_pickup_options %>%
+  select(route_id, office_depart, evening_depart) %>%
+  gather(location, time, office_depart, evening_depart)
+
+house_pickup_evening_train <- house_pickup_options %>%
+  select(route_id, evening_depart, evening_arrive) %>%
+  gather(location, time, evening_depart, evening_arrive)
+
+house_pickup_office_time <- house_pickup_options %>%
+  select(route_id, total_time_in_office_level, office_arrive, office_depart) %>%
+  gather(location, time, office_arrive, office_depart)
+
+house_pickup_office_time_time <- house_pickup_options %>%
+  select(route_id, total_time_in_office, total_time_in_office_level, office_arrive) %>%
+  mutate(total_time_in_office_label = stringr::str_trunc(as.character(total_time_in_office), 5, side = "right", ellipsis = ""))
+
+house_pickup_train_to_office <- house_pickup_options %>%
+  select(route_id, morning_arrive, office_arrive) %>%
+  gather(location, time, morning_arrive, office_arrive)
+
+house_pickup_morning_train <- house_pickup_options %>%
+  select(route_id, morning_depart, morning_arrive) %>%
+  gather(location, time, morning_depart, morning_arrive)
+
+house_pickup_house_to_train <- house_pickup_options %>%
+  select(route_id, house_to_station_mode, house_depart, morning_depart) %>%
+  gather(location, time, house_depart, morning_depart)
+
+house_pickup_house_to_train_time <- house_pickup_options %>%
+  select(route_id, house_depart) %>%
+  mutate(house_depart_label = stringr::str_trunc(as.character(house_depart), 5, side = "right", ellipsis = ""))
+
+ggplot() +
+  geom_line(aes(as.hms(time), route_id, color = house_to_station_mode), house_pickup_house_to_train) +
+  geom_line(aes(as.hms(time), route_id), house_pickup_morning_train, linetype = 2) +
+  geom_line(aes(as.hms(time), route_id), house_pickup_train_to_office, linetype = 3) +
+  geom_line(aes(as.hms(time), route_id), house_pickup_office_time) +
+  geom_line(aes(as.hms(time), route_id), house_pickup_office_to_train, linetype = 3) +
+  geom_line(aes(as.hms(time), route_id), house_pickup_evening_train, linetype = 2) +
+  geom_line(aes(as.hms(time), route_id, color = house_to_station_mode), house_pickup_station_to_house) +
+  geom_text(aes(house_arrive, route_id, label = house_arrive_label), house_pickup_station_to_house_time, hjust = 0) +
+  geom_text(aes(house_depart, route_id, label = house_depart_label), house_pickup_house_to_train_time, hjust = 1) +
+  geom_label(aes(office_arrive, route_id, label = total_time_in_office_label, color = total_time_in_office_level), house_pickup_office_time_time) +
+  geom_vline(xintercept = hms(0, 15, 6), color = "gray", alpha = 1/2) +
+  geom_vline(xintercept = hms(0, 30, 16), color = "gray", alpha = 1/2) +
+  scale_x_time(limits = c(hms(0, 0, 5), hms(0, 0, 18))) +
+  labs(x = NULL,
+       y = NULL) +
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        legend.position = "none",
+        panel.grid = element_blank())
+```
+
